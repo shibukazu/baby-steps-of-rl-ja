@@ -21,6 +21,7 @@ class CoinToss():
             raise Exception("The step count exceeded maximum. \
                             Please reset env.")
         else:
+            # 投げる回数が上限に達したら終了
             done = True if self.toss_count == final else False
 
         if action >= len(self.head_probs):
@@ -42,6 +43,7 @@ class EpsilonGreedyAgent():
         self.V = []
 
     def policy(self):
+        # epsilon-greedy で期待値に基づき、次のコインを決定する
         coins = range(len(self.V))
         if random.random() < self.epsilon:
             return random.choice(coins)
@@ -50,7 +52,9 @@ class EpsilonGreedyAgent():
 
     def play(self, env):
         # Initialize estimation.
+        # 各コインの選択回数
         N = [0] * len(env)
+        # 各コインの期待値
         self.V = [0] * len(env)
 
         env.reset()
@@ -63,6 +67,7 @@ class EpsilonGreedyAgent():
 
             n = N[selected_coin]
             coin_average = self.V[selected_coin]
+            # 選ばれたコインの期待値を更新
             new_average = (coin_average * n + reward) / (n + 1)
             N[selected_coin] += 1
             self.V[selected_coin] = new_average
@@ -82,6 +87,7 @@ if __name__ == "__main__":
         for e in epsilons:
             agent = EpsilonGreedyAgent(epsilon=e)
             means = []
+            # 様々な最大ステップ数で実験する
             for s in game_steps:
                 env.max_episode_steps = s
                 rewards = agent.play(env)

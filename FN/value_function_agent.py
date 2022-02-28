@@ -23,7 +23,9 @@ class ValueFunctionAgent(FNAgent):
         return agent
 
     def initialize(self, experiences):
+        # 価値関数のNN近似を行うための初期化
         scaler = StandardScaler()
+        # ノード数10の隠れ層2つをもつNNを近似関数とする
         estimator = MLPRegressor(hidden_layer_sizes=(10, 10), max_iter=1)
         self.model = Pipeline([("scaler", scaler), ("estimator", estimator)])
 
@@ -49,20 +51,26 @@ class ValueFunctionAgent(FNAgent):
         return predicteds
 
     def update(self, experiences, gamma):
+        # 蓄えた経験における遷移前状態
         states = np.vstack([e.s for e in experiences])
+        # 蓄えた経験における遷移後状態
         n_states = np.vstack([e.n_s for e in experiences])
-
+        # 遷移前状態での行動価値（現時点のNNによる行動価値近似関数に基づく）
         estimateds = self._predict(states)
+        # 遷移後状態での行動価値（現時点のNNによる行動価値近似関数に基づく）
         future = self._predict(n_states)
 
         for i, e in enumerate(experiences):
             reward = e.r
             if not e.d:
+                # 最終的なrewardはTD誤差における実際の価値にあたる
                 reward += gamma * np.max(future[i])
+            # 最終的なrewardの値がNNにおける教師データとなる
             estimateds[i][e.a] = reward
 
         estimateds = np.array(estimateds)
         states = self.model.named_steps["scaler"].transform(states)
+        # 遷移前状態を入力として、行動価値を予測し、更新後のestimatedsを教師データとして学習することで、TD学習となる
         self.model.named_steps["estimator"].partial_fit(states, estimateds)
 
 

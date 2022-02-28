@@ -24,10 +24,12 @@ class FNAgent():
         self.initialized = False
 
     def save(self, model_path):
+        # モデルインスタンスの保存
         self.model.save(model_path, overwrite=True, include_optimizer=False)
 
     @classmethod
     def load(cls, env, model_path, epsilon=0.0001):
+        # モデルインスタンスの読み込み
         actions = list(range(env.action_space.n))
         agent = cls(epsilon, actions)
         agent.model = K.models.load_model(model_path)
@@ -44,14 +46,18 @@ class FNAgent():
         raise NotImplementedError("You have to implement update method.")
 
     def policy(self, s):
+        # 確率epsilonでランダム行動
         if np.random.random() < self.epsilon or not self.initialized:
             return np.random.randint(len(self.actions))
         else:
+            # 確率1-epsilonで方策ベースの行動
             estimates = self.estimate(s)
+            # 行動確率を予測する場合（方策ベースの場合）行動確率に基づき行動を決定
             if self.estimate_probs:
                 action = np.random.choice(self.actions,
                                           size=1, p=estimates)[0]
                 return action
+            # 行動価値関数のみ予測する場合（評価ベースの場合）最大価値を与える行動に決定
             else:
                 return np.argmax(estimates)
 
@@ -65,6 +71,7 @@ class FNAgent():
                     env.render()
                 a = self.policy(s)
                 n_state, reward, done, info = env.step(a)
+                # エピソード内累積報酬を評価指標とする
                 episode_reward += reward
                 s = n_state
             else:
@@ -75,7 +82,9 @@ class Trainer():
 
     def __init__(self, buffer_size=1024, batch_size=32,
                  gamma=0.9, report_interval=10, log_dir=""):
+        # 最大の保存可能な経験数
         self.buffer_size = buffer_size
+        # 経験のうち、一度の学習で用いる数
         self.batch_size = batch_size
         self.gamma = gamma
         self.report_interval = report_interval
@@ -109,15 +118,18 @@ class Trainer():
             while not done:
                 if render:
                     env.render()
+                # observe_interval の間隔で観測結果を追加する
                 if self.training and observe_interval > 0 and\
                    (self.training_count == 1 or
-                    self.training_count % observe_interval == 0):
+                        self.training_count % observe_interval == 0):
                     frames.append(s)
 
                 a = agent.policy(s)
                 n_state, reward, done, info = env.step(a)
                 e = Experience(s, a, reward, n_state, done)
+                # 経験バッファに経験を追加する
                 self.experiences.append(e)
+                # 経験バッファが上限に達した場合、モデルを初期化し、学習を開始する（初回の学習のみ）
                 if not self.training and \
                    len(self.experiences) == self.buffer_size:
                     self.begin_train(i, agent)
@@ -204,7 +216,7 @@ class Logger():
                 os.mkdir(self.log_dir)
 
         self._callback = tf.compat.v1.keras.callbacks.TensorBoard(
-                            self.log_dir)
+            self.log_dir)
 
     @property
     def writer(self):
@@ -275,8 +287,8 @@ class Logger():
             image_string = output.getvalue()
             output.close()
             image = tf.compat.v1.Summary.Image(
-                        height=height, width=width, colorspace=channel,
-                        encoded_image_string=image_string)
+                height=height, width=width, colorspace=channel,
+                encoded_image_string=image_string)
             value = tf.compat.v1.Summary.Value(tag=tag, image=image)
             values.append(value)
 

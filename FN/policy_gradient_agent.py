@@ -14,7 +14,7 @@ tf.compat.v1.disable_eager_execution()
 class PolicyGradientAgent(FNAgent):
 
     def __init__(self, actions):
-        # PolicyGradientAgent uses self policy (doesn't use epsilon).
+        # 方策勾配では必ず方策に従うのでepsilonは0
         super().__init__(epsilon=0.0, actions=actions)
         self.estimate_probs = True
         self.scaler = StandardScaler()
@@ -52,23 +52,32 @@ class PolicyGradientAgent(FNAgent):
         print("Done initialization. From now, begin training!")
 
     def set_updater(self, optimizer):
+        # actions: 現時点の方策に従った行動履歴すべて
+        # rewards: 各行動時点より先の割引報酬和R_t（精度最大の見積もり価値）
         actions = tf.compat.v1.placeholder(shape=(None), dtype="int32")
         rewards = tf.compat.v1.placeholder(shape=(None), dtype="float32")
+        # self.actions : とりうる行動一覧（one-hotの次元になる）
+        # one_hot_actions : actionsのone-hot化
         one_hot_actions = tf.one_hot(actions, len(self.actions), axis=1)
+        # 現時点の行動確率（方策）
         action_probs = self.model.output
+        # selected_action_probs : 行動履歴における各行動が対応する行動確率 \pi_\theta(a|s)
         selected_action_probs = tf.reduce_sum(one_hot_actions * action_probs,
                                               axis=1)
         clipped = tf.clip_by_value(selected_action_probs, 1e-10, 1.0)
+        # - log \pi_\theta(a|s) * Q^{\pi_\theta}(s, a) を計算
         loss = - tf.math.log(clipped) * rewards
+        # E[- log \pi_\theta(a|s) * Q^{\pi_\theta}(s, a)] を計算
+        # これが誤差関数になる
         loss = tf.reduce_mean(loss)
-
+        # 上記誤差関数を利用して勾配逆伝搬法を行う
         updates = optimizer.get_updates(loss=loss,
                                         params=self.model.trainable_weights)
         self._updater = K.backend.function(
-                                        inputs=[self.model.input,
-                                                actions, rewards],
-                                        outputs=[loss],
-                                        updates=updates)
+            inputs=[self.model.input,
+                    actions, rewards],
+            outputs=[loss],
+            updates=updates)
 
     def estimate(self, s):
         normalized = self.scaler.transform(s)
@@ -117,6 +126,7 @@ class PolicyGradientTrainer(Trainer):
         return states, actions, rewards
 
     def episode_end(self, episode, step_count, agent):
+        # エピソード終了後の学習前処理（割引報酬和の計算など）
         rewards = [e.r for e in self.get_recent(step_count)]
         self.reward_log.append(sum(rewards))
 
@@ -131,10 +141,11 @@ class PolicyGradientTrainer(Trainer):
                 s, a, r, n_s, d = e
                 d_r = [_r * (self.gamma ** i) for i, _r in
                        enumerate(rewards[t:])]
+                # 時刻tより先の割引報酬和R_tの計算
                 d_r = sum(d_r)
                 d_e = Experience(s, a, d_r, n_s, d)
                 policy_experiences.append(d_e)
-
+            # 学習を行う
             agent.update(*self.make_batch(policy_experiences))
 
         if self.is_event(episode, self.report_interval):

@@ -23,7 +23,7 @@ class ActorCriticAgent(FNAgent):
         actions = list(range(env.action_space.n))
         agent = cls(actions)
         agent.model = K.models.load_model(model_path, custom_objects={
-                        "SampleLayer": SampleLayer})
+            "SampleLayer": SampleLayer})
         agent.initialized = True
         return agent
 
@@ -50,12 +50,14 @@ class ActorCriticAgent(FNAgent):
         model.add(K.layers.Flatten())
         model.add(K.layers.Dense(256, kernel_initializer=normal,
                                  activation="relu"))
-
+        # ここまで共有ネットワーク
         actor_layer = K.layers.Dense(len(self.actions),
                                      kernel_initializer=normal)
+        # Q値を出力
         action_evals = actor_layer(model.output)
+        # Q値に基づいて行動をサンプリング
         actions = SampleLayer()(action_evals)
-
+        # V値を出力
         critic_layer = K.layers.Dense(1, kernel_initializer=normal)
         values = critic_layer(model.output)
 
@@ -64,36 +66,51 @@ class ActorCriticAgent(FNAgent):
 
     def set_updater(self, optimizer,
                     value_loss_weight=1.0, entropy_weight=0.1):
+        # ある方策にしたがった経験のバッチをつくり、学習を行う
+        # actions: 方策に従い選択された行動
+        # values: その行動の行動価値関数
         actions = tf.compat.v1.placeholder(shape=(None), dtype="int32")
         values = tf.compat.v1.placeholder(shape=(None), dtype="float32")
-
+        # NNの出力(現在の状態に対する行動価値と状態価値)を取得
         _, action_evals, estimateds = self.model.output
-
+        # softmax関数 + cross-entropy
+        # softmax関数によってQ値から行動確率を計算
+        # 実際にとった行動actionsをlabelとしてクロスエントロピーを求めていることから、
+        # cross-entropyによって、実際にとった行動 a の -log(\pi_\theta(a|s))を求めている
         neg_logs = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                        logits=action_evals, labels=actions)
-        # tf.stop_gradient: Prevent policy_loss influences critic_layer.
+            logits=action_evals, labels=actions)
+        # advantageを計算する
+        # tf.stop_gradient:
+        #   advantageはactor側のlossの計算に使われており、そのままではactorの誤差がcriticにも伝搬してしまう
+        #   この２つは目的関数が異なるからcritic側には逆伝搬させないようにする
         advantages = values - tf.stop_gradient(estimateds)
-
+        # actor側の誤差を求める
+        # E[-log(\pi_\theta(a|s) * A)]を計算
         policy_loss = tf.reduce_mean(neg_logs * advantages)
+        # critic側の誤差を求める
+        # TD誤差学習
         value_loss = tf.keras.losses.MeanSquaredError()(values, estimateds)
+
         action_entropy = tf.reduce_mean(self.categorical_entropy(action_evals))
-
+        # 同時に学習するために２つのlossを合計したlossを全体のlossとする(critic側lossの寄与率をvalue_loss_weightで調整)
         loss = policy_loss + value_loss_weight * value_loss
+        # 行動確率に基づくエントロピーを引くことで過学習を防ぐ
+        # 行動確率にばらつきのある、エントロピーが大きい状態のほうが望ましいのでエントロピーが大きければ大きいほどlossが減少するようにする（正則化項）
         loss -= entropy_weight * action_entropy
-
+        # 全体のlossに基づいて学習する
         updates = optimizer.get_updates(loss=loss,
                                         params=self.model.trainable_weights)
 
         self._updater = K.backend.function(
-                                        inputs=[self.model.input,
-                                                actions, values],
-                                        outputs=[loss,
-                                                 policy_loss,
-                                                 value_loss,
-                                                 tf.reduce_mean(neg_logs),
-                                                 tf.reduce_mean(advantages),
-                                                 action_entropy],
-                                        updates=updates)
+            inputs=[self.model.input,
+                    actions, values],
+            outputs=[loss,
+                     policy_loss,
+                     value_loss,
+                     tf.reduce_mean(neg_logs),
+                     tf.reduce_mean(advantages),
+                     action_entropy],
+            updates=updates)
 
     def categorical_entropy(self, logits):
         """
@@ -114,6 +131,7 @@ class ActorCriticAgent(FNAgent):
             return action[0]
 
     def estimate(self, s):
+        # 現在の状態をNNに入力したときに得られる状態価値のみを返す
         action, action_evals, values = self.model.predict(np.array([s]))
         return values[0][0]
 
@@ -217,6 +235,7 @@ class ActorCriticTrainer(Trainer):
         self.rewards = []
 
     def step(self, episode, step_count, agent, experience):
+        # 環境との相互作用1回ごとに呼ばれる
         self.rewards.append(experience.r)
         if not agent.initialized:
             if len(self.experiences) < self.buffer_size:
@@ -233,8 +252,9 @@ class ActorCriticTrainer(Trainer):
             if len(self.experiences) < self.batch_size:
                 # Store experience until batch_size (enough to update).
                 return False
-
+            # 蓄えたexperience(同一の方策(Q関数)に従う)をもとにbatchを作成
             batch = self.make_batch(agent)
+            # batchをもとに学習を行う
             loss, lp, lv, p_ng, p_ad, p_en = agent.update(*batch)
             # Record latest metrics.
             self.losses["loss/total"] = loss
@@ -253,15 +273,19 @@ class ActorCriticTrainer(Trainer):
         states = np.array([e.s for e in experiences])
         actions = np.array([e.a for e in experiences])
 
-        # Calculate values.
-        # If the last experience isn't terminal (done) then estimates value.
+        # 各行動のQ値を計算する
+        # Q(s,a) = r(s,a) + \gamma * V(s_n)
         last = experiences[-1]
+        # future : V(s_n) ただし、エピソード終了の場合即時報酬を利用する
         future = last.r if last.d else agent.estimate(last.n_s)
         for e in reversed(experiences):
             value = e.r
             if not e.d:
+                # r + \gamma * V(s_n)
                 value += self.gamma * future
             values.append(value)
+            # V(s_n) = Q(s_n, a_n) と近似している？？
+            # 実際に撮った行動がaだから状態価値といえそう
             future = value
         values = np.array(list(reversed(values)))
 

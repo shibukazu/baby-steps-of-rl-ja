@@ -1,4 +1,7 @@
 def V(s, gamma=0.99):
+    # 報酬は現在の状態でのみ決まる
+    # 報酬の減衰率を gamma とする
+    # greedy方策とする
     V = R(s) + gamma * max_V_on_next_state(s)
     return V
 
@@ -13,17 +16,20 @@ def R(s):
 
 
 def max_V_on_next_state(s):
+    # 次の状態の価値関数に遷移確率をかけたもののうち最大のものを求める
     # If game end, expected value is 0.
     if s in ["happy_end", "bad_end"]:
         return 0
 
     actions = ["up", "down"]
+    # 次の状態の価値観数に遷移確率をかけたもの
     values = []
     for a in actions:
         transition_probs = transit_func(s, a)
         v = 0
         for next_state in transition_probs:
             prob = transition_probs[next_state]
+            # 価値関数が計算済みである必要
             v += prob * V(next_state)
         values.append(v)
     return max(values)
@@ -50,6 +56,8 @@ def transit_func(s, a):
         prob = 1.0
         return {state: prob}
     else:
+        # まだ終了していない場合
+        # ハイパーパラメーターのMOVE_PROBに基づき、遷移確率を与える
         opposite = "up" if a == "down" else "down"
         return {
             next_state(s, a): MOVE_PROB,

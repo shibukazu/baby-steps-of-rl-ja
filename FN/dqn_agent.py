@@ -18,7 +18,9 @@ class DeepQNetworkAgent(FNAgent):
 
     def initialize(self, experiences, optimizer):
         feature_shape = experiences[0].s.shape
+        # CNNモデルの構築
         self.make_model(feature_shape)
+        # optimizerの設定
         self.model.compile(optimizer, loss="mse")
         self.initialized = True
         print("Done initialization. From now, begin training!")
@@ -54,6 +56,7 @@ class DeepQNetworkAgent(FNAgent):
         n_states = np.array([e.n_s for e in experiences])
 
         estimateds = self.model.predict(states)
+        # 遷移先の価値はパラメータを固定したモデルから計算する（TD誤差の安定化のため）
         future = self._teacher_model.predict(n_states)
 
         for i, e in enumerate(experiences):

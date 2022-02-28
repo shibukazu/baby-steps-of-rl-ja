@@ -14,10 +14,12 @@ class MonteCarloAgent(ELAgent):
               render=False, report_interval=50):
         self.init_log()
         actions = list(range(env.action_space.n))
+        # Q関数
         self.Q = defaultdict(lambda: [0] * len(actions))
         N = defaultdict(lambda: [0] * len(actions))
-
+        # episode_count エピソードの間強化学習を行う（各エピソードごとに状態はリセットされる（環境自体は同じ？））
         for e in range(episode_count):
+            # 初期状態を取得する
             s = env.reset()
             done = False
             # Play until the end of episode.
@@ -25,6 +27,7 @@ class MonteCarloAgent(ELAgent):
             while not done:
                 if render:
                     env.render()
+                # Q関数に対するepsilon-greedy で行動を決定
                 a = self.policy(s, actions)
                 n_state, reward, done, info = env.step(a)
                 experience.append({"state": s, "action": a, "reward": reward})
@@ -32,18 +35,21 @@ class MonteCarloAgent(ELAgent):
             else:
                 self.log(reward)
 
-            # Evaluate each state, action.
+            # 各経験における状態と価値のQ関数を、それを経験した時点からエピソード終了時点までの残りの経験を利用して更新する
             for i, x in enumerate(experience):
+                # 更新対象の状態と行動のセットを取得する
+                # Q(s,a)が更新される
                 s, a = x["state"], x["action"]
 
-                # Calculate discounted future reward of s.
+                # 経験時より後の残りの経験を利用してQ関数を更新する
                 G, t = 0, 0
                 for j in range(i, len(experience)):
                     G += math.pow(gamma, t) * experience[j]["reward"]
                     t += 1
-
+                # alphaの計算の仕方の理由はよくわからん
                 N[s][a] += 1  # count of s, a pair
                 alpha = 1 / N[s][a]
+                # G - Q(s,a) : TD誤差
                 self.Q[s][a] += alpha * (G - self.Q[s][a])
 
             if e != 0 and e % report_interval == 0:

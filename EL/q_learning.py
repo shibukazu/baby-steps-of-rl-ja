@@ -5,6 +5,7 @@ from frozen_lake_util import show_q_value
 
 
 class QLearningAgent(ELAgent):
+    # TD学習の実装
 
     def __init__(self, epsilon=0.1):
         super().__init__(epsilon)
@@ -14,6 +15,7 @@ class QLearningAgent(ELAgent):
         self.init_log()
         actions = list(range(env.action_space.n))
         self.Q = defaultdict(lambda: [0] * len(actions))
+        # 各エピソードごとの学習
         for e in range(episode_count):
             s = env.reset()
             done = False
@@ -22,9 +24,11 @@ class QLearningAgent(ELAgent):
                     env.render()
                 a = self.policy(s, actions)
                 n_state, reward, done, info = env.step(a)
-
+                # 実際の行動価値(Q学習では遷移先の状態の価値V(s)=max(Q(s,a))としている)
                 gain = reward + gamma * max(self.Q[n_state])
+                # 現時点の見積もり行動価値
                 estimated = self.Q[s][a]
+                # 1stepごとにTD誤差で学習する
                 self.Q[s][a] += learning_rate * (gain - estimated)
                 s = n_state
 

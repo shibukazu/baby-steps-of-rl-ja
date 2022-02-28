@@ -10,6 +10,7 @@ class ELAgent():
         self.reward_log = []
 
     def policy(self, s, actions):
+        # Q関数に対するepsilon-greedyで行動する（ような方策とする）
         if np.random.random() < self.epsilon:
             return np.random.randint(len(actions))
         else:
@@ -30,7 +31,7 @@ class ELAgent():
             mean = np.round(np.mean(rewards), 3)
             std = np.round(np.std(rewards), 3)
             print("At Episode {} average reward is {} (+/-{}).".format(
-                   episode, mean, std))
+                episode, mean, std))
         else:
             indices = list(range(0, len(self.reward_log), interval))
             means = []

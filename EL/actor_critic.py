@@ -17,6 +17,7 @@ class Actor(ELAgent):
         return np.exp(x) / np.sum(np.exp(x), axis=0)
 
     def policy(self, s):
+        # Q関数をsoftmaxによって行動確率化し、確率分布に従って次の行動を決定する
         a = np.random.choice(self.actions, 1,
                              p=self.softmax(self.Q[s]))
         return a[0]
